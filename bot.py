@@ -1,8 +1,6 @@
-import random
 import telebot
 import sqlite3
 import os
-from datetime import datetime
 from dotenv import load_dotenv
 from database import *
 
@@ -20,7 +18,7 @@ def db_create():
     create_buylist_table(cursor)
     create_buy_table(cursor)
 
-current_lists = {}
+list_props = {}
 
 # Начало
 @bot.message_handler(commands=['start'])
@@ -56,13 +54,18 @@ def process_reg(message):
 @bot.message_handler(commands=['newlist'])
 def create_list(message):
     try:
-        list_seed = ''.join(random.choice(str(message.chat.id) + "0123456789" + str(datetime.now().microsecond)) for _ in range(5))
+        msg = bot.send_message(message.chat.id, "Введите название списка")
+        bot.register_next_step_handler(msg, add_name_list)
+    except Exception as e:
+        handle_error(message, e)
 
-        cursor.execute(add_buylist_link, (f"Список {list_seed}",))
-        current_lists[message.chat.id] =  cursor.lastrowid
+def add_name_list(message):
+    try:
+        cursor.execute(add_buylist_link, (message.text,))
+        list_props[message.chat.id] =  cursor.lastrowid
         connection.commit()
 
-        msg = bot.send_message(message.chat.id, "Введите продукты по одному (Название Кол-во):")
+        msg = bot.send_message(message.chat.id, "Введите продукты по одному")
         bot.register_next_step_handler(msg, add_product)
     except Exception as e:
         handle_error(message, e)
@@ -81,7 +84,7 @@ def add_product(message):
         
         product_name = message.text[:last_index].strip()
         quantity = int(message.text[last_index+1:].strip())
-        list_id = current_lists[message.chat.id]
+        list_id = list_props[message.chat.id]
 
         cursor.execute(add_buy_link, (product_name, quantity, list_id))
         connection.commit()
@@ -93,14 +96,14 @@ def add_product(message):
 
 def close_list(message):
     try:
-        res = cursor.execute(check_buylist_link, (current_lists[message.chat.id],)).fetchone()
+        res = cursor.execute(check_buylist_link, (list_props[message.chat.id],)).fetchone()
         if res is None:
-            cursor.execute(del_buylist_link, (current_lists[message.chat.id],))
+            cursor.execute(del_buylist_link, (list_props[message.chat.id],))
             connection.commit()
             bot.send_message(message.chat.id, "Список пуст. Удаление.")
         else:
             bot.send_message(message.chat.id, "Список создан. Заполнен.")
-        del current_lists[message.chat.id]
+        del list_props[message.chat.id]
         
     except Exception as e:
         handle_error(message, e)
